@@ -54,7 +54,7 @@ chmod +x ~/.claude/skills/openclaw-setup/scripts/*.py
 - "openclaw 怎么安装"
 - "小龙虾怎么部署"
 
-然后跟着引导走就行，全程只需要回答 3 次问题。
+然后跟着引导走就行，AI 会尽量减少打断，连续帮你完成。
 
 ## 项目结构
 
@@ -108,3 +108,9 @@ chmod +x ~/.claude/skills/openclaw-setup/scripts/*.py
 ## License
 
 MIT
+
+## 说明
+
+- 本技能的脚本根据 OpenClaw 官方文档和社区资料编写，尚未在所有环境下完整测试。如遇到问题欢迎提 issue。
+- 不同操作系统、Node.js 版本、OpenClaw 版本可能存在兼容差异，脚本会尽量做检测和容错。
+- 欢迎 PR 补充更多平台支持或修复兼容性问题。
