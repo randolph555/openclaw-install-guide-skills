@@ -16,49 +16,49 @@ PROVIDER_TEMPLATES = {
     "gemini": {
         "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
         "api": "openai-completions",
-        "models": [{"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "contextWindow": 1000000, "maxTokens": 8192}],
+        "models": [{"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "input": ["text", "image"], "contextWindow": 1000000, "maxTokens": 8192}],
         "default_model": "gemini-2.5-flash"
     },
     "anthropic": {
         "baseUrl": "https://api.anthropic.com",
         "api": "anthropic-messages",
-        "models": [{"id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "contextWindow": 200000, "maxTokens": 8192}],
+        "models": [{"id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "input": ["text", "image"], "contextWindow": 200000, "maxTokens": 8192}],
         "default_model": "claude-sonnet-4-20250514"
     },
     "openai": {
-        "baseUrl": "https://api.openai.com/v1/responses",
+        "baseUrl": "https://api.openai.com/v1",
         "api": "openai-responses",
-        "models": [{"id": "gpt-4o", "name": "GPT-4o", "contextWindow": 128000, "maxTokens": 4096}],
+        "models": [{"id": "gpt-4o", "name": "GPT-4o", "input": ["text", "image"], "contextWindow": 128000, "maxTokens": 4096}],
         "default_model": "gpt-4o"
     },
     "qwen": {
         "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "api": "openai-completions",
-        "models": [{"id": "qwen-max", "name": "通义千问 Max", "contextWindow": 128000, "maxTokens": 8192}],
+        "models": [{"id": "qwen-max", "name": "通义千问 Max", "input": ["text", "image"], "contextWindow": 128000, "maxTokens": 8192}],
         "default_model": "qwen-max"
     },
     "deepseek": {
         "baseUrl": "https://api.deepseek.com/v1",
         "api": "openai-completions",
-        "models": [{"id": "deepseek-chat", "name": "DeepSeek Chat", "contextWindow": 128000, "maxTokens": 8192}],
+        "models": [{"id": "deepseek-chat", "name": "DeepSeek Chat", "input": ["text"], "contextWindow": 128000, "maxTokens": 8192}],
         "default_model": "deepseek-chat"
     },
     "moonshot": {
         "baseUrl": "https://api.moonshot.cn/v1",
         "api": "openai-completions",
-        "models": [{"id": "moonshot-v1-128k", "name": "Kimi 128K", "contextWindow": 128000, "maxTokens": 8192}],
+        "models": [{"id": "moonshot-v1-128k", "name": "Kimi 128K", "input": ["text"], "contextWindow": 128000, "maxTokens": 8192}],
         "default_model": "moonshot-v1-128k"
     },
     "zhipu": {
         "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
         "api": "openai-completions",
-        "models": [{"id": "glm-4-flash", "name": "GLM-4 Flash", "contextWindow": 128000, "maxTokens": 4096}],
+        "models": [{"id": "glm-4-flash", "name": "GLM-4 Flash", "input": ["text", "image"], "contextWindow": 128000, "maxTokens": 4096}],
         "default_model": "glm-4-flash"
     },
     "ollama": {
         "baseUrl": "http://localhost:11434/v1",
         "api": "openai-completions",
-        "models": [{"id": "llama3.2", "name": "Llama 3.2", "contextWindow": 128000, "maxTokens": 4096}],
+        "models": [{"id": "llama3.2", "name": "Llama 3.2", "input": ["text"], "contextWindow": 128000, "maxTokens": 4096}],
         "default_model": "llama3.2"
     }
 }
@@ -70,6 +70,31 @@ def get_config_path():
 
 def get_env_path():
     return Path.home() / ".openclaw" / ".env"
+
+
+def get_auth_profiles_path():
+    return Path.home() / ".openclaw" / "agents" / "main" / "agent" / "auth-profiles.json"
+
+
+def sync_auth_profiles(provider_name, api_key):
+    """同步更新 auth-profiles.json 中对应 provider 的 token"""
+    path = get_auth_profiles_path()
+    profiles = {}
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            profiles = json.load(f)
+
+    profile_key = f"{provider_name}:manual"
+    profiles[profile_key] = {
+        "provider": provider_name,
+        "token": api_key,
+        "createdAt": profiles.get(profile_key, {}).get("createdAt", "2026-01-01T00:00:00.000Z")
+    }
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(profiles, f, indent=2, ensure_ascii=False)
+    print(f"Auth profile synced: {path} ({profile_key})")
 
 
 def load_config(path):
@@ -107,17 +132,18 @@ def generate_model_config(provider, api_key, base_url=None, model=None, api_prot
         if not base_url or not model:
             print("Error: --base-url and --model are required for custom provider", file=sys.stderr)
             sys.exit(1)
-        protocol = api_protocol or "openai-completions"
+        protocol = api_protocol or "openai-responses"
+        # 使用 "openai" 作为 provider 名，确保和 auth-profiles.json 中的 "openai:manual" 匹配
         return {
             "providers": {
-                "custom": {
+                "openai": {
                     "baseUrl": base_url,
                     "apiKey": api_key,
                     "api": protocol,
-                    "models": [{"id": model, "name": model, "contextWindow": 128000, "maxTokens": 8192}]
+                    "models": [{"id": model, "name": model, "input": ["text", "image"], "contextWindow": 128000, "maxTokens": 8192}]
                 }
             }
-        }, f"custom/{model}"
+        }, f"openai/{model}"
 
     template = PROVIDER_TEMPLATES.get(provider)
     if not template:
@@ -195,6 +221,12 @@ def main():
             "defaults": {
                 "model": {
                     "primary": primary_model
+                },
+                "imageModel": {
+                    "primary": primary_model
+                },
+                "models": {
+                    primary_model: {}
                 }
             }
         }
@@ -211,6 +243,10 @@ def main():
     save_config(config_path, merged)
     print(f"Config written to {config_path}")
     print(f"Primary model: {primary_model}")
+
+    # 同步 auth-profiles.json（确保 embedded runner 能认证）
+    provider_name = args.provider if args.provider != "custom" else "openai"
+    sync_auth_profiles(provider_name, args.api_key)
 
     # 配置代理
     if args.proxy:

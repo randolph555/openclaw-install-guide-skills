@@ -71,7 +71,7 @@ curl -fsSL https://openclaw.ai/install.sh | bash
 
 **方式二：npm 安装**
 ```bash
-npm install -g openclaw
+npm install -g openclaw@latest
 ```
 
 验证：
@@ -140,7 +140,7 @@ iwr -useb https://raw.githubusercontent.com/1186258278/OpenClawChineseTranslatio
 
 **方式二：npm 安装**
 ```powershell
-npm install -g openclaw
+npm install -g openclaw@latest
 ```
 
 验证：
@@ -221,7 +221,7 @@ curl -fsSL https://openclaw.ai/install.sh | bash
 ```
 或
 ```bash
-npm install -g openclaw
+npm install -g openclaw@latest
 ```
 
 ### 4. 运行 onboard 向导

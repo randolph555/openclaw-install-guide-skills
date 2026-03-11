@@ -16,12 +16,12 @@ description: |
 
 ## 设计理念：最少打断，最大连贯
 
-整个流程只有 **3 个交互点**，其余全部连续执行：
+整个流程只有 **4 个交互点**，其余全部连续执行：
 
 1. **收集** — 一次性问完所有基础信息（1 轮交互）
 2. **确认方案** — 根据信息推导最优方案，用户确认后开干（1 轮交互）
 3. **执行** — 连续执行全部安装配置，只在必须要用户提供信息时才停（API Key、扫码等）
-4. **验收** — 最终验收清单（1 轮交互）
+4. **技能 + 验收** — 选装技能包 + 最终验收清单（1 轮交互）
 
 减少交互轮次是因为每多一次停顿，就多一次出轨的风险。能连续做完的事就不要拆开问。
 
@@ -32,19 +32,35 @@ description: |
 - 配置模型时编辑 `~/.openclaw/openclaw.json` 的 `models.providers` 结构。**不要用 `openclaw config set auth.openai.xxx`——这个路径不存在会报错。**
 - 说人话，不甩术语。必须用到技术词时立刻用大白话解释。
 
+## 配置架构（关键知识）
+
+OpenClaw 有**三层配置文件**，改错地方或漏改是最常见的故障原因：
+
+| 文件 | 路径 | 谁管理 |
+|------|------|--------|
+| 主配置 | `~/.openclaw/openclaw.json` | 用户编辑 |
+| Agent 模型定义 | `~/.openclaw/agents/main/agent/models.json` | daemon 重启自动生成 |
+| 认证凭证 | `~/.openclaw/agents/main/agent/auth-profiles.json` | 用户或 wizard 生成 |
+
+**关键规则：**
+- 三个文件中的 provider 名、baseUrl、apiKey/token **必须一致**
+- `models.json` 是 daemon 重启时自动生成的，改了 `openclaw.json` 后必须 `openclaw daemon restart`
+- 热加载（config hot reload）**不会**重新生成 `models.json`
+- 重启后要检查 `models.json`，apiKey 有时不会正确同步，需手动修复后再重启一次
+
+详细说明参考：`{baseDir}/references/troubleshooting.md`
+
 ---
 
 ## 阶段一：收集信息（1 轮交互）
 
 用 AskUserQuestion 工具一次性问完所有基础问题（最多 4 个）：
 
-**问题 1：你想让小龙虾帮你做什么？**（multiSelect: true）
+**问题 1：你已经有大模型的 API Key 了吗？**
 选项：
-- 总结新闻资讯
-- 管理待办日程
-- 写文案/翻译文档
-- 监控网站变化
-- 就想玩玩看
+- 有 OpenAI / Claude / Gemini 等官方 Key
+- 有第三方中转/CDN 的 Key（比如代理商给的）
+- 没有，帮我推荐一个
 
 **问题 2：你用的什么电脑？**
 选项：
@@ -52,16 +68,17 @@ description: |
 - Windows
 - Linux
 
-**问题 3：你在中国大陆还是海外？**
+**问题 3：你想怎么安装小龙虾？**
 选项：
-- 中国大陆
-- 海外 / 有科学上网工具
+- 本地安装（直接装在电脑上，推荐 Mac/Linux）(Recommended)
+- Docker 安装（隔离干净，适合不想折腾环境的）
+- 不懂，帮我选
 
 **问题 4：你想通过什么跟小龙虾聊天？**（multiSelect: true）
 选项：
-- QQ
 - 飞书
-- 钉钉
+- 微信
+- QQ
 - 先用网页就行
 
 ---
@@ -72,24 +89,33 @@ description: |
 
 ### 安装方式
 
+如果用户选了具体方式，直接用。如果选了「不懂，帮我选」：
+
 | 条件 | 推荐 | 原因 |
 |------|------|------|
+| Mac / Linux 用户 | 本地安装 | 最简单，一行命令搞定 |
 | Windows 用户 | Docker | 避免 Windows 特有的坑（spawn EINVAL、PATH 问题等） |
-| 想让小龙虾操作桌面软件 | 本地 | Docker 里访问不了宿主机桌面 |
-| 其他情况 | Docker | 干净隔离，搬迁方便 |
 
 ### 大模型
 
+如果用户已有 Key → 直接问他 provider 信息（后续在阶段三收集）。
+
+如果用户有第三方中转 Key → 后续问 API 地址、Key、模型名。
+
+如果用户没有 Key → 根据网络环境推荐：
+
 | 条件 | 推荐 | 原因 |
 |------|------|------|
-| 中国大陆 + 无代理 | 通义千问 / DeepSeek | 国内直连，有免费额度 |
+| 中国大陆 | DeepSeek / 通义千问 | 国内直连，价格便宜，有免费额度 |
 | 海外 + 想免费试 | Google Gemini | 免费额度最大方 |
 | 海外 + 追求效果 | Anthropic Claude | 最聪明 |
-| 有自己的 API 中转 | 自定义 OpenAI 兼容 | 用户自带 |
+| 电脑性能好（16G+）想离线 | Ollama 本地模型 | 完全免费不联网 |
+
+判断用户在中国大陆还是海外：跑 `bash {baseDir}/scripts/detect_env.sh`，看 `network.in_china` 字段。
 
 ### 聊天平台
 
-直接按用户选择。如果选了微信，建议改用 QQ 或企微（个人微信稳定性差）。
+直接按用户选择。如果选了微信，告知目前微信接入需要使用第三方插件（稳定性一般），建议同时配一个飞书或 QQ 作为备选。
 
 ### 网络配置
 
@@ -98,10 +124,10 @@ description: |
 **把推导结果汇总成一段话告诉用户：**
 
 > 根据你的情况，我帮你定了这个方案：
-> - **安装方式**：Docker（不会弄乱你电脑）
-> - **大模型**：通义千问（国内免费额度，不需要翻墙）
-> - **聊天平台**：网页 + 飞书
-> - **网络**：需要配国内镜像加速
+> - **安装方式**：本地安装（一行命令搞定）
+> - **大模型**：DeepSeek（国内便宜好用）
+> - **聊天平台**：飞书
+> - **网络**：需要配国内 npm 镜像
 >
 > 接下来我会帮你一步步搞定。中间需要你提供一些信息（比如 API 密钥）的时候我会问你，其他的我直接帮你操作。
 >
@@ -148,7 +174,7 @@ bash {baseDir}/scripts/detect_env.sh
 本地安装路线：
 1. 检测 `node --version`，>= 22 跳过，否则引导安装
 2. 中国大陆用户：`npm config set registry https://registry.npmmirror.com`
-3. 安装 OpenClaw：`npm install -g openclaw` 或一键脚本
+3. 安装 OpenClaw：`npm install -g openclaw@latest` 或一键脚本
 4. 验证 `openclaw --version`
 
 Docker 路线：
@@ -176,11 +202,17 @@ Docker 路线：
 
 ### 3.4 配置大模型
 
-**【需要用户输入】** 根据方案中的模型，问用户获取 API Key。
+**【需要用户输入】** 根据阶段一收集到的情况分三条路线：
 
-- 如果是需要注册的服务 → 告诉用户去哪注册、怎么拿 Key，等用户给
-- 如果选了"自定义兼容 OpenAI" → 一次性问三个信息：API 地址、API Key、模型名称
-- 如果选了 Ollama → 帮用户安装 Ollama 并下载模型，不需要 Key
+**路线 A：用户已有官方 Key**
+问用户是哪家的（OpenAI / Claude / Gemini / DeepSeek 等），拿到 Key 后用脚本配置。
+
+**路线 B：用户有第三方中转 Key**
+一次性问三个信息：API 地址（Base URL）、API Key、模型名称。
+提醒用户：第三方中转需要完整支持 OpenAI Responses API，否则工具调用会 502。如果不确定，先配上试试，第一条消息能回复、第二条也能回复就没问题。
+
+**路线 C：用户没有 Key**
+根据推导结果，告诉用户去哪注册、怎么拿 Key，等用户给。
 
 拿到 Key 后，**用脚本生成配置**（不要手动编辑 JSON，避免格式出错）：
 
@@ -200,7 +232,7 @@ python3 {baseDir}/scripts/generate_config.py --provider deepseek --api-key "用�
 **API 协议说明**：
 - OpenAI 官方已迁移到 `/v1/responses` 接口（`openai-responses` 协议），脚本已自动使用新接口
 - 大部分第三方中转/国内模型仍然使用 `/v1/chat/completions`（`openai-completions` 协议）
-- 自定义 provider 默认用 `openai-completions`，如果报 `400 Unsupported legacy protocol` 错误，加 `--api-protocol openai-responses` 参数
+- 自定义 provider（`--provider custom`）默认用 `openai-responses`，如果 CDN 不支持会在第二条消息时 502，此时需要换支持完整 Responses API 的 CDN
 - Claude 系列用 `anthropic-messages` 协议
 
 脚本会自动：合并到现有配置（不覆盖）、备份原文件、运行 `openclaw config validate` 验证。
@@ -270,17 +302,30 @@ bash {baseDir}/scripts/setup_channel.sh feishu --app-id "cli_xxx" --app-secret "
 
 详细参考：`{baseDir}/references/channels-setup.md`
 
-### 3.6 安装技能
+### 3.7 安装技能包
 
-根据用户在阶段一说的需求，自动推荐并安装技能。
+**用 AskUserQuestion 展示技能目录，让用户勾选想装的：**
 
-| 用户需求 | 推荐技能 |
-|---------|---------|
-| 总结新闻资讯 | blogwatcher / brave-search |
-| 管理待办日程 | apple-reminders / things-mac |
-| 写文案/翻译 | 内置能力，无需额外技能 |
-| 监控网站 | blogwatcher |
-| 就想玩玩 | 先装几个热门的：brave-search、nano-pdf |
+**问题：你想给小龙虾装哪些技能？**（multiSelect: true）
+选项：
+- 联网搜索 (brave-search) — 让小龙虾能搜索互联网，回答实时问题。免费，需要 Brave API Key（免费额度够用）
+- 读 PDF (nano-pdf) — 读取和分析 PDF 文件内容。免费，无需额外 Key
+- 监控网站 (blogwatcher) — 定时监控网站/RSS 变化并通知你。免费，无需额外 Key
+- 先不装了，以后再说
+
+**注意事项：**
+- 标注了「需要 API Key」的技能，装完后还需要配对应的 Key 才能用
+- 告诉用户以后随时可以装：`npx clawhub@latest install 技能名`
+- 如果用户选了需要 Key 的技能，安装后立刻告诉用户去哪拿 Key、怎么配
+
+安装命令：
+```bash
+npx clawhub@latest install brave-search
+npx clawhub@latest install nano-pdf
+npx clawhub@latest install blogwatcher
+```
+
+装完后 `openclaw daemon restart` 让技能生效。
 
 ### 3.8 安全加固
 
@@ -305,9 +350,10 @@ bash {baseDir}/scripts/verify_install.sh --channel <用户选择的平台>
 > 全部搞定！来看看你的小龙虾：
 >
 > - OpenClaw 版本：vX.X.X
-> - 大模型：通义千问（已验证可用）
+> - 大模型：XXX（已验证可用）
 > - 网页聊天：http://127.0.0.1:18789/chat
-> - 飞书接入：已配通（机器人名：XXX）
+> - 聊天平台：XXX 已配通
+> - 已安装技能：brave-search、nano-pdf
 > - 安全状态：网关 Token 已设置，端口未暴露
 > - 健康检查：openclaw doctor 全部通过
 >
@@ -328,7 +374,7 @@ bash {baseDir}/scripts/verify_install.sh --channel <用户选择的平台>
 
 ## 常见问题处理
 
-执行过程中遇到报错时的自动诊断逻辑：
+执行过程中遇到报错时的自动诊断逻辑。**完整排查手册参考：`{baseDir}/references/troubleshooting.md`**
 
 ### 安装类
 
@@ -350,6 +396,27 @@ bash {baseDir}/scripts/verify_install.sh --channel <用户选择的平台>
 | 回复很慢 / 不回复 | 检查 API Key 余额、模型配置、`openclaw doctor` |
 | Chrome CDP 报错 | `~/.openclaw/.env` 中加 `NO_PROXY=127.0.0.1,localhost,::1` |
 
+### 模型配置类（重要）
+
+| 问题 | 原因和解决 |
+|------|-----------|
+| 502 Upstream request failed（第二条消息起） | CDN 不完整支持 Responses API 的 `function_call` input items。换完整支持的 CDN。详见 troubleshooting.md |
+| 502 只在 embedded run 时出现 | `auth-profiles.json` 的 provider 名或 token 与 `models.json` 不匹配。统一三个配置文件的 provider 名和 key |
+| 模型配置不生效 | 只改了 `models.providers` 没改 `agents.defaults.model.primary`，或改完没 `openclaw daemon restart` |
+| `models.json` 还是旧 key | daemon 重启时 apiKey 有时不同步。手动改 `models.json` 后再重启一次 |
+| Setup Wizard 验证失败 | CDN 只支持 `/v1/responses` 但 wizard 用 `/v1/chat/completions` 验证。跳过 wizard，手动配置 `"api": "openai-responses"` |
+| typing TTL reached (2m) 后无回复 | API key 无效或 CDN 不可达。检查 `models.json` 和 `auth-profiles.json` 中的 key 是否正确 |
+
+### 图片功能类
+
+| 问题 | 解决 |
+|------|------|
+| 不能识别图片 | 模型定义中加 `"input": ["text", "image"]`，配置 `agents.defaults.imageModel` |
+| imageModel 报 Unknown model | `imageModel` 引用的 provider 在 `auth-profiles.json` 中不存在，统一 provider 名 |
+| 飞书发图片失败 LocalMediaAccessError | 内置 `@openclaw/feishu` 插件 bug，换用 `@m1heng-clawd/feishu` |
+| 飞书不识别图片 | 检查飞书应用是否有 `im:resource` 权限 |
+| read ETIMEDOUT（图片请求） | `models.json` 中 apiKey 是占位符 `"OPENAI_API_KEY"`。确保真实 key 已同步到 `models.json` |
+
 ### 平台接入类
 
 | 问题 | 解决 |
@@ -357,8 +424,21 @@ bash {baseDir}/scripts/verify_install.sh --channel <用户选择的平台>
 | QQ 机器人不回 | 检查 Gateway → 检查插件 → `openclaw logs --follow` |
 | 飞书 API 配额用完 | Gateway 每 60 秒探测一次。多台机器用不同飞书应用 |
 | 飞书 99991672 权限错误 | 缺少 `contact:contact.base:readonly` 权限，去飞书开放平台添加 |
-| 飞书发图片失败 LocalMediaAccessError | 内置插件 bug，换用 `@m1heng-clawd/feishu` 解决 |
-| 飞书不识别图片 | 检查是否添加了 `im:resource` 权限，确认用的是 `@m1heng-clawd/feishu` |
+
+### 快速切换 CDN（完整步骤）
+
+推荐使用 `generate_config.py` 脚本自动完成配置同步：
+
+```bash
+python3 {baseDir}/scripts/generate_config.py --provider openai --api-key "新Key" --base-url "https://新CDN/v1" --model "模型名" --api-protocol openai-responses
+```
+
+脚本会自动更新 `openclaw.json` 和 `auth-profiles.json`。然后：
+
+1. `openclaw daemon restart`
+2. 检查 `~/.openclaw/agents/main/agent/models.json` 确认 baseUrl 和 apiKey 已更新
+3. 如果 apiKey 没更新 → 手动改 `models.json` → 再重启一次
+4. 在聊天平台发 `/new` 开新会话 → 发测试消息验证
 
 ## 云端部署（进阶）
 

@@ -63,11 +63,12 @@ chmod +x ~/.claude/skills/openclaw-setup/scripts/*.py
 ├── README.md                   # 本文件
 ├── scripts/
 │   ├── detect_env.sh           # 一次性环境检测（输出 JSON）
-│   ├── generate_config.py      # 大模型配置生成（8 种预设 + 自定义）
+│   ├── generate_config.py      # 大模型配置生成（8 种预设 + 自定义，自动同步 auth-profiles.json）
 │   ├── setup_channel.sh        # IM 平台一键配置（飞书/钉钉/QQ/TG/Discord）
 │   └── verify_install.sh       # 完整验收检查（输出 JSON）
 └── references/
-    ├── model-setup.md          # 各大模型详细配置指南
+    ├── model-setup.md          # 各大模型详细配置指南（含三层配置架构说明）
+    ├── troubleshooting.md      # 故障排查手册（502/配置不生效/图片/CDN 兼容性）
     ├── channels-setup.md       # 各 IM 平台接入详细指南
     ├── docker-install.md       # Docker 安装指南
     ├── local-install.md        # 本地安装指南（Mac/Win/Linux）

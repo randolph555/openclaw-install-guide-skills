@@ -9,6 +9,21 @@ OpenClaw 的模型配置存在 `~/.openclaw/openclaw.json` 文件里，核心结
 1. **直接帮用户编辑 `~/.openclaw/openclaw.json`**（推荐，你可以用 Edit 工具操作）
 2. **用 `openclaw config wizard`** 交互式引导
 
+### 三层配置架构（重要）
+
+改模型配置不是只改一个文件的事。OpenClaw 有三个相关文件需要保持一致：
+
+| 文件 | 路径 | 说明 |
+|------|------|------|
+| 主配置 | `~/.openclaw/openclaw.json` | 你编辑的文件 |
+| Agent 模型 | `~/.openclaw/agents/main/agent/models.json` | daemon 重启时自动从主配置生成 |
+| 认证凭证 | `~/.openclaw/agents/main/agent/auth-profiles.json` | 需要手动同步 token |
+
+**改完主配置后必须：**
+1. 同步更新 `auth-profiles.json` 中对应 provider 的 `token`
+2. 执行 `openclaw daemon restart`（不是 gateway restart）
+3. 检查 `models.json` 是否正确更新（apiKey 有时不同步，需手动修复后再重启）
+
 配置的核心 JSON 结构：
 
 ```json
@@ -24,6 +39,7 @@ OpenClaw 的模型配置存在 `~/.openclaw/openclaw.json` 文件里，核心结
           {
             "id": "模型ID",
             "name": "显示名称",
+            "input": ["text", "image"],
             "contextWindow": 200000,
             "maxTokens": 8192
           }
@@ -35,15 +51,45 @@ OpenClaw 的模型配置存在 `~/.openclaw/openclaw.json` 文件里，核心结
     "defaults": {
       "model": {
         "primary": "供应商名称/模型ID"
+      },
+      "imageModel": {
+        "primary": "供应商名称/模型ID"
+      },
+      "models": {
+        "供应商名称/模型ID": {}
       }
     }
   }
 }
 ```
 
+**`agents.defaults` 字段说明：**
+- `model.primary` — 主聊天模型（必填）
+- `imageModel.primary` — 图片识别/生成模型（需要图片功能时必填）
+- `models` — 模型额外配置（key 必须和 primary 一致）
+
+**图片功能配置：** 要让 OpenClaw 能识别图片，必须同时满足：
+1. 模型定义中 `input` 字段包含 `"image"`
+2. 配置了 `agents.defaults.imageModel.primary`
+3. `auth-profiles.json` 中有对应 provider 的有效 token
+
 **协议规则**：
 - Claude 系列 → `"api": "anthropic-messages"`
-- 其他所有模型（GPT/Gemini/国内模型/Ollama）→ `"api": "openai-completions"`
+- OpenAI 官方 → `"api": "openai-responses"`（新版 Responses API）
+- 其他所有模型（Gemini/国内模型/Ollama/大部分中转）→ `"api": "openai-completions"`
+- 自定义 CDN → 先试 `openai-responses`，如果第二条消息 502 说明 CDN 不完整支持，需要换 CDN（不建议降级到 `openai-completions`，会丢失工具调用等功能）
+
+**`auth-profiles.json` 同步：** 每次改了 apiKey 后都要同步更新此文件：
+```json
+{
+  "供应商名称:manual": {
+    "provider": "供应商名称",
+    "token": "和openclaw.json中apiKey相同的值",
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+provider 名必须和 `openclaw.json` 的 `models.providers` 下的 key 一致。
 
 **敏感信息保护**：apiKey 可以用环境变量代替。在 `~/.openclaw/.env` 文件中写入 `MY_API_KEY=sk-xxx`，然后配置中用 `"apiKey": "${MY_API_KEY}"` 引用。
 
@@ -434,14 +480,15 @@ ollama pull qwen2.5:7b      # 中文更强
   "models": {
     "mode": "merge",
     "providers": {
-      "custom": {
+      "openai": {
         "baseUrl": "用户给的API地址",
         "apiKey": "用户给的Key",
-        "api": "openai-completions",
+        "api": "openai-responses",
         "models": [
           {
             "id": "用户给的模型名",
             "name": "用户给的模型名",
+            "input": ["text", "image"],
             "contextWindow": 128000,
             "maxTokens": 8192
           }
@@ -452,18 +499,40 @@ ollama pull qwen2.5:7b      # 中文更强
   "agents": {
     "defaults": {
       "model": {
-        "primary": "custom/用户给的模型名"
+        "primary": "openai/用户给的模型名"
+      },
+      "imageModel": {
+        "primary": "openai/用户给的模型名"
+      },
+      "models": {
+        "openai/用户给的模型名": {}
       }
     }
   }
 }
 ```
 
+**重要：provider 名统一用 `"openai"`**（而非 `"custom"` 或自定义名称），这样 `auth-profiles.json` 中的 `openai:manual` 就能匹配上。如果用了其他名称，embedded runner 会找不到认证信息导致 502。
+
+同时更新 `auth-profiles.json`：
+```json
+{
+  "openai:manual": {
+    "provider": "openai",
+    "token": "用户给的Key（和 openclaw.json 中一致）",
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
 **协议选择**：
 - 如果用户说用的是 Claude 系列模型 → 把 `"api"` 改成 `"anthropic-messages"`
-- 其他所有情况 → 用 `"openai-completions"`
+- 自定义 CDN 建议先用 `"openai-responses"` → 如果第二条消息报 502，说明 CDN 不完整支持 Responses API（缺少 `function_call` input item 支持），需要换 CDN
+- 不建议降级到 `"openai-completions"`，会导致 OpenClaw 的工具调用等功能不可用
 
 **注意**：Base URL 末尾是否需要 `/v1` 取决于服务商，有些带有些不带。如果配了报错，试试加上或去掉 `/v1`。
+
+**CDN 兼容性提醒**：很多第三方 CDN（如 Sub2API 系列）不完整支持 OpenAI Responses API 中的 `function_call`/`function_call_output` input item。表现为第一条消息正常，第二条开始 502。遇到这种情况需要换支持完整 Responses API 的 CDN。
 
 ---
 
